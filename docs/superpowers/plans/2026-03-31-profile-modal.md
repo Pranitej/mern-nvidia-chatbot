@@ -1,0 +1,806 @@
+# Profile Modal Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add a two-tab profile modal (edit name/email + change password) accessible from the sidebar footer.
+
+**Architecture:** Three new backend endpoints added to `authController.js` and registered in `auth.js`. Frontend is a single `ProfileModal.jsx` component rendered in `ChatPage.jsx`, triggered by a new button in the `Sidebar.jsx` footer. Zustand `authStore` is updated on successful profile save.
+
+**Tech Stack:** Express + Mongoose + bcryptjs + Zod (backend); React + react-hook-form + Zod + Zustand + axios (frontend); Tailwind CSS v4.
+
+---
+
+### Task 1: Add `createdAt` to all auth user payloads
+
+**Files:**
+- Modify: `server/controllers/authController.js`
+
+- [ ] **Step 1: Update every handler that returns a user object**
+
+In `server/controllers/authController.js`, find all four places that return `{ user: { id: ..., name: ..., email: ... } }` and add `createdAt`:
+
+In `register` (around line 56):
+```js
+res.status(201).json({ user: { id: user._id, name: user.name, email: user.email, createdAt: user.createdAt } });
+```
+
+In `login` (around line 77):
+```js
+res.json({ user: { id: user._id, name: user.name, email: user.email, createdAt: user.createdAt } });
+```
+
+In `getMe` (around line 127):
+```js
+res.json({ user: { id: user._id, name: user.name, email: user.email, createdAt: user.createdAt } });
+```
+
+- [ ] **Step 2: Verify with curl**
+
+```bash
+curl -s -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"testlogin@example.com","password":"testpassword123"}' | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');console.log(JSON.parse(d))"
+```
+Expected: response includes `createdAt` field on the `user` object.
+
+- [ ] **Step 3: Commit**
+```bash
+git add server/controllers/authController.js
+git commit -m "feat: include createdAt in all auth user payloads"
+```
+
+---
+
+### Task 2: Backend — `GET /api/auth/check-email`
+
+**Files:**
+- Modify: `server/controllers/authController.js`
+- Modify: `server/routes/auth.js`
+
+- [ ] **Step 1: Add the handler to `authController.js`**
+
+Add after the existing `getMe` function:
+
+```js
+export async function checkEmail(req, res) {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'email query param required' });
+
+  const existing = await User.findOne({
+    email: email.toLowerCase().trim(),
+    _id: { $ne: req.user.id },
+  });
+
+  res.json({ available: !existing });
+}
+```
+
+- [ ] **Step 2: Register the route in `server/routes/auth.js`**
+
+Add the import and route. The file currently imports `{ register, login, refresh, logout, getMe }` — add `checkEmail`:
+
+```js
+import { register, login, refresh, logout, getMe, checkEmail } from '../controllers/authController.js';
+```
+
+Add the route after the existing `/me` route:
+```js
+router.get('/check-email', authLimiter, requireAuth, checkEmail);
+```
+
+- [ ] **Step 3: Verify with curl**
+
+First log in to get a cookie, then test:
+```bash
+# Login to get cookie
+curl -s -c /tmp/cookies.txt -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"testlogin@example.com","password":"testpassword123"}'
+
+# Check an unused email
+curl -s -b /tmp/cookies.txt \
+  "http://localhost:5000/api/auth/check-email?email=notused@example.com"
+```
+Expected: `{"available":true}`
+
+```bash
+# Check the same user's own email (should be available — excluded from check)
+curl -s -b /tmp/cookies.txt \
+  "http://localhost:5000/api/auth/check-email?email=testlogin@example.com"
+```
+Expected: `{"available":true}`
+
+- [ ] **Step 4: Commit**
+```bash
+git add server/controllers/authController.js server/routes/auth.js
+git commit -m "feat: add GET /api/auth/check-email endpoint"
+```
+
+---
+
+### Task 3: Backend — `PUT /api/auth/profile`
+
+**Files:**
+- Modify: `server/controllers/authController.js`
+- Modify: `server/routes/auth.js`
+
+- [ ] **Step 1: Add the handler to `authController.js`**
+
+Add after `checkEmail`:
+
+```js
+const updateProfileSchema = z.object({
+  name:  z.string().min(1).max(50).optional(),
+  email: z.string().email().optional(),
+}).refine(d => d.name !== undefined || d.email !== undefined, {
+  message: 'At least one of name or email is required',
+});
+
+export async function updateProfile(req, res, next) {
+  try {
+    const data = updateProfileSchema.parse(req.body);
+
+    if (data.email) {
+      const conflict = await User.findOne({
+        email: data.email.toLowerCase().trim(),
+        _id: { $ne: req.user.id },
+      });
+      if (conflict) return res.status(409).json({ error: 'Email already in use' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { ...(data.name && { name: data.name }), ...(data.email && { email: data.email.toLowerCase().trim() }) },
+      { new: true }
+    );
+
+    res.json({ user: { id: user._id, name: user.name, email: user.email, createdAt: user.createdAt } });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+}
+```
+
+- [ ] **Step 2: Register the route in `server/routes/auth.js`**
+
+Update the import line to include `updateProfile`:
+```js
+import { register, login, refresh, logout, getMe, checkEmail, updateProfile } from '../controllers/authController.js';
+```
+
+Add the route:
+```js
+router.put('/profile', authLimiter, requireAuth, updateProfile);
+```
+
+- [ ] **Step 3: Verify with curl**
+
+```bash
+curl -s -b /tmp/cookies.txt -X PUT http://localhost:5000/api/auth/profile \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Updated Name"}'
+```
+Expected: `{"user":{"id":"...","name":"Updated Name","email":"testlogin@example.com","createdAt":"..."}}`
+
+```bash
+# Test email conflict (register a second user first if needed)
+curl -s -b /tmp/cookies.txt -X PUT http://localhost:5000/api/auth/profile \
+  -H "Content-Type: application/json" \
+  -d '{"email":"testlogin@example.com"}'
+```
+Expected: `{"available":true}` — no conflict since it's the same user's email.
+
+- [ ] **Step 4: Commit**
+```bash
+git add server/controllers/authController.js server/routes/auth.js
+git commit -m "feat: add PUT /api/auth/profile endpoint"
+```
+
+---
+
+### Task 4: Backend — `PUT /api/auth/password`
+
+**Files:**
+- Modify: `server/controllers/authController.js`
+- Modify: `server/routes/auth.js`
+
+- [ ] **Step 1: Add the handler to `authController.js`**
+
+Add after `updateProfile`:
+
+```js
+const updatePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword:     z.string().min(8).max(100),
+});
+
+export async function updatePassword(req, res, next) {
+  try {
+    const data = updatePasswordSchema.parse(req.body);
+
+    const user = await User.findById(req.user.id).select('+password');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const valid = await bcrypt.compare(data.currentPassword, user.password);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    const hashed = await bcrypt.hash(data.newPassword, config.auth.bcryptRounds);
+    await User.findByIdAndUpdate(req.user.id, { password: hashed });
+
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+}
+```
+
+- [ ] **Step 2: Register the route in `server/routes/auth.js`**
+
+Update the import line:
+```js
+import { register, login, refresh, logout, getMe, checkEmail, updateProfile, updatePassword } from '../controllers/authController.js';
+```
+
+Add the route:
+```js
+router.put('/password', authLimiter, requireAuth, updatePassword);
+```
+
+- [ ] **Step 3: Verify with curl**
+
+```bash
+curl -s -b /tmp/cookies.txt -X PUT http://localhost:5000/api/auth/password \
+  -H "Content-Type: application/json" \
+  -d '{"currentPassword":"testpassword123","newPassword":"newpassword123"}'
+```
+Expected: `{"ok":true}`
+
+```bash
+# Verify wrong current password returns 401
+curl -s -b /tmp/cookies.txt -X PUT http://localhost:5000/api/auth/password \
+  -H "Content-Type: application/json" \
+  -d '{"currentPassword":"wrongpassword","newPassword":"newpassword123"}'
+```
+Expected: `{"error":"Current password is incorrect"}`
+
+- [ ] **Step 4: Change password back so later tests still work**
+```bash
+curl -s -b /tmp/cookies.txt -X PUT http://localhost:5000/api/auth/password \
+  -H "Content-Type: application/json" \
+  -d '{"currentPassword":"newpassword123","newPassword":"testpassword123"}'
+```
+
+- [ ] **Step 5: Commit**
+```bash
+git add server/controllers/authController.js server/routes/auth.js
+git commit -m "feat: add PUT /api/auth/password endpoint"
+```
+
+---
+
+### Task 5: Frontend — Extend `auth.js` API client
+
+**Files:**
+- Modify: `client/src/api/auth.js`
+
+- [ ] **Step 1: Add the three new API calls**
+
+Replace the entire contents of `client/src/api/auth.js` with:
+
+```js
+import api from './axios.js';
+
+export const authApi = {
+  register:       (data)          => api.post('/api/auth/register', data),
+  login:          (data)          => api.post('/api/auth/login', data),
+  logout:         ()              => api.post('/api/auth/logout'),
+  me:             ()              => api.get('/api/auth/me'),
+  checkEmail:     (email)         => api.get('/api/auth/check-email', { params: { email } }),
+  updateProfile:  (data)          => api.put('/api/auth/profile', data),
+  updatePassword: (data)          => api.put('/api/auth/password', data),
+};
+```
+
+- [ ] **Step 2: Commit**
+```bash
+git add client/src/api/auth.js
+git commit -m "feat: add checkEmail, updateProfile, updatePassword to auth API client"
+```
+
+---
+
+### Task 6: Frontend — Build `ProfileModal.jsx`
+
+**Files:**
+- Create: `client/src/pages/ProfileModal.jsx`
+
+- [ ] **Step 1: Create the file with the Profile tab**
+
+Create `client/src/pages/ProfileModal.jsx`:
+
+```jsx
+import { useState, useEffect, useRef } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { authApi } from '../api/auth.js';
+import { useAuthStore } from '../store/authStore.js';
+
+// ─── Schemas ────────────────────────────────────────────────────────────────
+const profileSchema = z.object({
+  name:  z.string().min(1, 'Name required').max(50, 'Max 50 characters'),
+  email: z.string().email('Invalid email'),
+});
+
+const passwordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password required'),
+  newPassword:     z.string().min(8, 'At least 8 characters'),
+  confirmPassword: z.string().min(1, 'Please confirm your password'),
+}).refine(d => d.newPassword === d.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
+});
+
+// ─── Password strength (same logic as RegisterPage) ─────────────────────────
+function calcStrength(pass) {
+  let s = 0;
+  if (pass.length >= 8) s++;
+  if (pass.match(/[a-z]/) && pass.match(/[A-Z]/)) s++;
+  if (pass.match(/[0-9]/)) s++;
+  if (pass.match(/[^a-zA-Z0-9]/)) s++;
+  return s;
+}
+function strengthColor(s) {
+  if (s === 0) return 'bg-gray-600';
+  if (s === 1) return 'bg-red-500';
+  if (s === 2) return 'bg-yellow-500';
+  if (s === 3) return 'bg-blue-500';
+  return 'bg-green-500';
+}
+function strengthText(s) {
+  if (s === 0) return '';
+  if (s === 1) return 'Weak';
+  if (s === 2) return 'Fair';
+  if (s === 3) return 'Good';
+  return 'Strong';
+}
+
+// ─── Profile Tab ─────────────────────────────────────────────────────────────
+function ProfileTab({ user, onSaved }) {
+  const { setUser } = useAuthStore();
+  const [emailStatus, setEmailStatus] = useState(null); // null | 'checking' | 'available' | 'taken'
+  const debounceRef = useRef(null);
+
+  const { register, handleSubmit, watch, setError, formState: { errors, isSubmitting } } = useForm({
+    resolver: zodResolver(profileSchema),
+    defaultValues: { name: user.name, email: user.email },
+  });
+
+  const watchedEmail = watch('email');
+
+  useEffect(() => {
+    if (!watchedEmail || watchedEmail === user.email) {
+      setEmailStatus(null);
+      return;
+    }
+    // Basic format check before hitting the server
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(watchedEmail)) {
+      setEmailStatus(null);
+      return;
+    }
+    clearTimeout(debounceRef.current);
+    setEmailStatus('checking');
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await authApi.checkEmail(watchedEmail);
+        setEmailStatus(res.data.available ? 'available' : 'taken');
+      } catch {
+        setEmailStatus(null);
+      }
+    }, 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [watchedEmail, user.email]);
+
+  async function onSubmit(data) {
+    if (emailStatus === 'taken') return;
+    try {
+      const res = await authApi.updateProfile(data);
+      setUser({ ...res.data.user });
+      onSaved();
+    } catch (err) {
+      setError('root', { message: err.response?.data?.error || 'Failed to update profile' });
+    }
+  }
+
+  const saveDisabled = isSubmitting || emailStatus === 'checking' || emailStatus === 'taken';
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 p-5">
+      {/* Name */}
+      <div>
+        <label className="block text-xs font-medium text-gray-400 mb-1.5">Full Name</label>
+        <input
+          {...register('name')}
+          type="text"
+          className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+        />
+        {errors.name && <p className="mt-1.5 text-xs text-red-400">{errors.name.message}</p>}
+      </div>
+
+      {/* Email */}
+      <div>
+        <label className="block text-xs font-medium text-gray-400 mb-1.5">Email Address</label>
+        <input
+          {...register('email')}
+          type="email"
+          className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+        />
+        {emailStatus === 'checking' && (
+          <p className="mt-1.5 text-xs text-amber-400 flex items-center gap-1.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            Checking availability…
+          </p>
+        )}
+        {emailStatus === 'available' && (
+          <p className="mt-1.5 text-xs text-green-400 flex items-center gap-1.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400" />
+            Email is available
+          </p>
+        )}
+        {emailStatus === 'taken' && (
+          <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" />
+            Email already in use
+          </p>
+        )}
+        {errors.email && <p className="mt-1.5 text-xs text-red-400">{errors.email.message}</p>}
+      </div>
+
+      {/* Root error */}
+      {errors.root && (
+        <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3">
+          <p className="text-sm text-red-400">{errors.root.message}</p>
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={saveDisabled}
+        className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 py-3 text-sm font-medium text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-50 disabled:hover:scale-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-[#2a2a2a]"
+      >
+        {isSubmitting ? 'Saving…' : 'Save changes'}
+      </button>
+    </form>
+  );
+}
+
+// ─── Password Tab ─────────────────────────────────────────────────────────────
+function PasswordTab() {
+  const [success, setSuccess] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [strength, setStrength] = useState(0);
+
+  const { register, handleSubmit, reset, watch, setError, formState: { errors, isSubmitting } } = useForm({
+    resolver: zodResolver(passwordSchema),
+  });
+
+  const newPass = watch('newPassword', '');
+
+  async function onSubmit(data) {
+    try {
+      await authApi.updatePassword({ currentPassword: data.currentPassword, newPassword: data.newPassword });
+      setSuccess(true);
+      setStrength(0);
+      reset();
+      setTimeout(() => setSuccess(false), 4000);
+    } catch (err) {
+      setError('root', { message: err.response?.data?.error || 'Failed to update password' });
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 p-5">
+      {/* Current password */}
+      <div>
+        <label className="block text-xs font-medium text-gray-400 mb-1.5">Current Password</label>
+        <div className="relative">
+          <input
+            {...register('currentPassword')}
+            type={showCurrent ? 'text' : 'password'}
+            placeholder="••••••••"
+            className="w-full rounded-xl bg-[#1a1a1a] pl-4 pr-10 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+          />
+          <button type="button" onClick={() => setShowCurrent(v => !v)}
+            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-300 transition-colors">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              {showCurrent
+                ? <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></>
+                : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+              }
+            </svg>
+          </button>
+        </div>
+        {errors.currentPassword && <p className="mt-1.5 text-xs text-red-400">{errors.currentPassword.message}</p>}
+      </div>
+
+      {/* New password */}
+      <div>
+        <label className="block text-xs font-medium text-gray-400 mb-1.5">New Password</label>
+        <div className="relative">
+          <input
+            {...register('newPassword', { onChange: e => setStrength(calcStrength(e.target.value)) })}
+            type={showNew ? 'text' : 'password'}
+            placeholder="••••••••"
+            className="w-full rounded-xl bg-[#1a1a1a] pl-4 pr-10 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+          />
+          <button type="button" onClick={() => setShowNew(v => !v)}
+            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-300 transition-colors">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              {showNew
+                ? <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></>
+                : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+              }
+            </svg>
+          </button>
+        </div>
+        {newPass.length > 0 && (
+          <div className="mt-2 space-y-1">
+            <div className="flex gap-1">
+              {[1,2,3,4].map(l => (
+                <div key={l} className={`h-1 flex-1 rounded-full transition-all duration-300 ${strength >= l ? strengthColor(strength) : 'bg-gray-700'}`} />
+              ))}
+            </div>
+            {strengthText(strength) && (
+              <p className="text-[10px] text-gray-500">{strengthText(strength)} password</p>
+            )}
+          </div>
+        )}
+        {errors.newPassword && <p className="mt-1.5 text-xs text-red-400">{errors.newPassword.message}</p>}
+      </div>
+
+      {/* Confirm password */}
+      <div>
+        <label className="block text-xs font-medium text-gray-400 mb-1.5">Confirm New Password</label>
+        <input
+          {...register('confirmPassword')}
+          type="password"
+          placeholder="••••••••"
+          className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+        />
+        {errors.confirmPassword && <p className="mt-1.5 text-xs text-red-400">{errors.confirmPassword.message}</p>}
+      </div>
+
+      {/* Success message */}
+      {success && (
+        <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-3">
+          <p className="text-sm text-green-400 flex items-center gap-2">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            Password updated successfully
+          </p>
+        </div>
+      )}
+
+      {/* Root error */}
+      {errors.root && (
+        <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3">
+          <p className="text-sm text-red-400">{errors.root.message}</p>
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 py-3 text-sm font-medium text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-50 disabled:hover:scale-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-[#2a2a2a]"
+      >
+        {isSubmitting ? 'Updating…' : 'Update password'}
+      </button>
+    </form>
+  );
+}
+
+// ─── Modal shell ──────────────────────────────────────────────────────────────
+export default function ProfileModal({ onClose }) {
+  const { user } = useAuthStore();
+  const [tab, setTab] = useState('profile');
+  const [savedBanner, setSavedBanner] = useState(false);
+
+  function handleSaved() {
+    setSavedBanner(true);
+    setTimeout(() => setSavedBanner(false), 3000);
+  }
+
+  // Close on Escape
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const joinedDate = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : '';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-md mx-4 rounded-2xl bg-gradient-to-br from-[#2a2a2a] to-[#252525] border border-white/10 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-300"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Glow */}
+        <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-2xl blur pointer-events-none" />
+
+        <div className="relative">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 pt-5">
+            <h2 className="text-lg font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
+              My Profile
+            </h2>
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white transition-all duration-200"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Avatar + meta */}
+          <div className="flex flex-col items-center py-5">
+            <div className="relative mb-3">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 blur-md opacity-50" />
+              <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-pink-600 text-2xl font-bold text-white shadow-lg">
+                {user?.name?.[0]?.toUpperCase() || 'U'}
+              </div>
+            </div>
+            <p className="text-sm font-semibold text-white">{user?.name}</p>
+            {joinedDate && <p className="text-xs text-gray-500 mt-0.5">Joined {joinedDate}</p>}
+          </div>
+
+          {/* Saved banner */}
+          {savedBanner && (
+            <div className="mx-5 mb-3 rounded-xl bg-green-500/10 border border-green-500/20 p-2.5 animate-in fade-in duration-300">
+              <p className="text-xs text-green-400 flex items-center gap-2">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Profile updated successfully
+              </p>
+            </div>
+          )}
+
+          {/* Tabs */}
+          <div className="flex border-b border-white/10 mx-5">
+            {['profile', 'password'].map(t => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`flex-1 py-2.5 text-sm font-medium capitalize transition-all duration-200 border-b-2 ${
+                  tab === t
+                    ? 'text-purple-400 border-purple-500'
+                    : 'text-gray-500 border-transparent hover:text-gray-300'
+                }`}
+              >
+                {t === 'profile' ? 'Profile' : 'Password'}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          {tab === 'profile'
+            ? <ProfileTab user={user} onSaved={handleSaved} />
+            : <PasswordTab />
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Commit**
+```bash
+git add client/src/pages/ProfileModal.jsx
+git commit -m "feat: add ProfileModal component with profile and password tabs"
+```
+
+---
+
+### Task 7: Frontend — Wire modal into `ChatPage.jsx` and `Sidebar.jsx`
+
+**Files:**
+- Modify: `client/src/pages/ChatPage.jsx`
+- Modify: `client/src/components/layout/Sidebar.jsx`
+
+- [ ] **Step 1: Add `profileOpen` state and `<ProfileModal>` to `ChatPage.jsx`**
+
+Add the import at the top of `client/src/pages/ChatPage.jsx`:
+```js
+import ProfileModal from './ProfileModal.jsx';
+```
+
+Add state inside the `ChatPage` component (after the existing `sidebarOpen` state):
+```js
+const [profileOpen, setProfileOpen] = useState(false);
+```
+
+Pass the handler to `<Sidebar>` (update the existing `<Sidebar>` line):
+```jsx
+<Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onOpenProfile={() => setProfileOpen(true)} />
+```
+
+Add the modal render just before the closing `</div>` of the component return:
+```jsx
+{profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
+```
+
+- [ ] **Step 2: Add the profile button to `Sidebar.jsx` footer**
+
+In `client/src/components/layout/Sidebar.jsx`, update the function signature to accept `onOpenProfile`:
+```js
+export default function Sidebar({ open, onClose, onOpenProfile }) {
+```
+
+In the footer `<div className="flex items-center gap-1">` (around line 184), add the profile button between `<ThemeToggle />` and the logout button:
+
+```jsx
+<button
+  onClick={onOpenProfile}
+  title="Profile"
+  className="group relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 transition-all duration-200 hover:bg-white/10 hover:text-white hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500"
+>
+  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+  <span className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+    Profile
+  </span>
+</button>
+```
+
+- [ ] **Step 3: Commit**
+```bash
+git add client/src/pages/ChatPage.jsx client/src/components/layout/Sidebar.jsx
+git commit -m "feat: wire ProfileModal into ChatPage and add profile button to Sidebar"
+```
+
+---
+
+### Task 8: Smoke test the full flow
+
+- [ ] **Step 1: Verify profile button appears in sidebar footer**
+
+Open `http://localhost:5173`. Log in. Check that the sidebar footer now has three icon buttons: theme toggle, profile (person icon), logout.
+
+- [ ] **Step 2: Verify modal opens and shows correct data**
+
+Click the profile button. Modal should appear with:
+- User's initial in the gradient avatar
+- User's name and "Joined [Month] [Year]"
+- Profile tab active with pre-filled name and email
+
+- [ ] **Step 3: Verify email duplicate check**
+
+On the Profile tab, change the email to an address already in use by another account. After 400ms the amber "Checking…" dot should appear, then turn red "Email already in use". The Save button should be disabled.
+
+Change it back to a unique email — dot turns green "Email is available". Save enables.
+
+- [ ] **Step 4: Verify profile save updates the sidebar**
+
+Change the name to something new and click Save. The sidebar footer should immediately reflect the updated name. The modal should show a green "Profile updated" banner.
+
+- [ ] **Step 5: Verify password change**
+
+Switch to the Password tab. Enter the wrong current password → submit → should show red "Current password is incorrect". Enter the correct current password and a new password (8+ chars) → submit → green "Password updated successfully" banner appears and fields clear.
+
+- [ ] **Step 6: Verify modal closes correctly**
+
+Click the backdrop, click ×, and press Escape — modal should close in all three cases.

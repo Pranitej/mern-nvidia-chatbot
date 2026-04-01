@@ -166,24 +166,12 @@ export default function ChatArea() {
       {/* Input Area with decorative gradient */}
       <div className="relative">
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-purple-500/30 to-transparent" />
-        {isStreaming && (
-          <div className="flex justify-center pb-2 pt-1">
-            <button
-              onClick={abort}
-              aria-label="Stop generating"
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white text-xs font-semibold shadow-lg hover:scale-105 hover:shadow-red-500/25 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-[var(--bg-base)]"
-            >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="6" width="12" height="12" rx="1" />
-              </svg>
-              Stop generating
-            </button>
-          </div>
-        )}
         <MessageInput
           value={input}
           onChange={setInput}
           onSubmit={handleSend}
+          isStreaming={isStreaming}
+          onStop={abort}
         />
       </div>
     </div>

@@ -1,0 +1,68 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─── Theme variables ─────────────────────────────────────────────────────── */
+/* Light mode (default — .dark class absent) */
+:root {
+  --bg-base:        #c8d3dc;
+  --bg-surface:     #bdc9d4;
+  --bg-panel:       #d6dfe8;
+  --bg-sidebar:     #b2bec9;
+  --bg-sidebar-end: #a8b5c1;
+  --bg-input:       #c4cfd9;
+  --bg-code-hdr:    #d0dae3;
+  --text-base:      #0a0f14;
+  --text-muted:     #1a2535;
+  --text-dim:       #2d4055;
+  --border:         rgba(0, 0, 0, 0.14);
+  --border-subtle:  rgba(0, 0, 0, 0.07);
+}
+
+/* Dark mode (.dark on <html>) */
+html.dark {
+  --bg-base:        #212121;
+  --bg-surface:     #1a1a1a;
+  --bg-panel:       #2a2a2a;
+  --bg-sidebar:     #121212;
+  --bg-sidebar-end: #171717;
+  --bg-input:       #2a2a2a;
+  --bg-code-hdr:    #0a0a0a;
+  --text-base:      #ffffff;
+  --text-muted:     #9ca3af;
+  --text-dim:       #6b7280;
+  --border:         rgba(255, 255, 255, 0.10);
+  --border-subtle:  rgba(255, 255, 255, 0.05);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+/* ─── Light-mode text overrides ───────────────────────────────────────────── */
+/* Tailwind gray utilities are designed for dark UIs — re-map them to dark
+   equivalents when the app is in light mode so all text stays readable.       */
+html:not(.dark) .text-white,
+html:not(.dark) .text-gray-100,
+html:not(.dark) .text-gray-200 { color: #0a0f14; }
+
+html:not(.dark) .text-gray-300 { color: #1a2535; }
+html:not(.dark) .text-gray-400 { color: #2d4055; }
+html:not(.dark) .text-gray-500 { color: #3d5268; }
+html:not(.dark) .text-gray-600 { color: #4e657c; }
+
+/* Keep placeholder subtle but still readable */
+html:not(.dark) .placeholder-gray-500::placeholder { color: #4e657c; }
+
+/* ─── Custom scrollbar ────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  {
+  background: rgba(139, 92, 246, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(139, 92, 246, 0.45); }
+
+html:not(.dark) ::-webkit-scrollbar-thumb       { background: rgba(0, 0, 0, 0.20); }
+html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.35); }
