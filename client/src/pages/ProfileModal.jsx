@@ -101,7 +101,7 @@ function ProfileTab({ user, onSaved }) {
         <input
           {...register('name')}
           type="text"
-          className="w-full rounded-xl bg-[var(--bg-input)] px-4 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+          className="w-full rounded-xl bg-white/5 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
         />
         {errors.name && <p className="mt-1.5 text-xs text-red-400">{errors.name.message}</p>}
       </div>
@@ -112,7 +112,7 @@ function ProfileTab({ user, onSaved }) {
         <input
           {...register('email')}
           type="email"
-          className="w-full rounded-xl bg-[var(--bg-input)] px-4 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+          className="w-full rounded-xl bg-white/5 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
         />
         {emailStatus === 'checking' && (
           <p className="mt-1.5 text-xs text-amber-400 flex items-center gap-1.5">
@@ -145,7 +145,7 @@ function ProfileTab({ user, onSaved }) {
       <button
         type="submit"
         disabled={saveDisabled}
-        className="w-full rounded-xl bg-gradient-to-r from-purple-700 to-violet-700 py-3 text-sm font-medium text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-violet-700/25 disabled:opacity-50 disabled:hover:scale-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-[var(--bg-panel)]"
+        className="w-full rounded-xl bg-gradient-to-r from-purple-700 to-violet-700 py-3 text-sm font-medium text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-violet-700/25 disabled:opacity-50 disabled:hover:scale-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900"
       >
         {isSubmitting ? 'Saving…' : 'Save changes'}
       </button>
@@ -188,7 +188,7 @@ function PasswordTab() {
             {...register('currentPassword')}
             type={showCurrent ? 'text' : 'password'}
             placeholder="••••••••"
-            className="w-full rounded-xl bg-[var(--bg-input)] pl-4 pr-10 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+            className="w-full rounded-xl bg-white/5 pl-4 pr-10 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
           />
           <button type="button" onClick={() => setShowCurrent(v => !v)}
             className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-300 transition-colors">
@@ -211,7 +211,7 @@ function PasswordTab() {
             {...register('newPassword', { onChange: e => setStrength(calcStrength(e.target.value)) })}
             type={showNew ? 'text' : 'password'}
             placeholder="••••••••"
-            className="w-full rounded-xl bg-[var(--bg-input)] pl-4 pr-10 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+            className="w-full rounded-xl bg-white/5 pl-4 pr-10 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
           />
           <button type="button" onClick={() => setShowNew(v => !v)}
             className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-300 transition-colors">
@@ -245,7 +245,7 @@ function PasswordTab() {
           {...register('confirmPassword')}
           type="password"
           placeholder="••••••••"
-          className="w-full rounded-xl bg-[var(--bg-input)] px-4 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+          className="w-full rounded-xl bg-white/5 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
         />
         {errors.confirmPassword && <p className="mt-1.5 text-xs text-red-400">{errors.confirmPassword.message}</p>}
       </div>
@@ -272,7 +272,7 @@ function PasswordTab() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-xl bg-gradient-to-r from-purple-700 to-violet-700 py-3 text-sm font-medium text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-violet-700/25 disabled:opacity-50 disabled:hover:scale-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-[var(--bg-panel)]"
+        className="w-full rounded-xl bg-gradient-to-r from-purple-700 to-violet-700 py-3 text-sm font-medium text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-violet-700/25 disabled:opacity-50 disabled:hover:scale-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900"
       >
         {isSubmitting ? 'Updating…' : 'Update password'}
       </button>
@@ -308,7 +308,7 @@ export default function ProfileModal({ onClose }) {
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md mx-4 rounded-2xl bg-[var(--bg-panel)] border border-[var(--border)] shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-300"
+        className="relative w-full max-w-md mx-4 rounded-2xl bg-gray-900 border border-white/10 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-300"
         onClick={e => e.stopPropagation()}
       >
         {/* Glow */}
@@ -317,7 +317,7 @@ export default function ProfileModal({ onClose }) {
         <div className="relative">
           {/* Header */}
           <div className="flex items-center justify-between px-5 pt-5">
-            <h2 className="text-lg font-bold text-[var(--text-base)]">
+            <h2 className="text-lg font-bold text-white">
               My Profile
             </h2>
             <button
@@ -338,7 +338,7 @@ export default function ProfileModal({ onClose }) {
                 {user?.name?.[0]?.toUpperCase() || 'U'}
               </div>
             </div>
-            <p className="text-sm font-semibold text-[var(--text-base)]">{user?.name}</p>
+            <p className="text-sm font-semibold text-white">{user?.name}</p>
             {joinedDate && <p className="text-xs text-gray-500 mt-0.5">Joined {joinedDate}</p>}
           </div>
 
