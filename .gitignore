@@ -27,6 +27,7 @@ Thumbs.db
 # Internal tools (not project code)
 .playwright-mcp/
 .superpowers/
+docs/
 
 # Test coverage
 coverage/
