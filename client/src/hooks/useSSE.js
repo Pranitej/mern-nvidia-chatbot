@@ -4,10 +4,12 @@ import { useChatStore } from '../store/chatStore.js';
 export function useSSE() {
   const { startStreaming, appendToken, appendReasoning, finalizeStream, clearStream } = useChatStore();
   const abortControllerRef = useRef(null);
+  const generationRef = useRef(0);
 
   const stream = useCallback(async (conversationId, content, model) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const generation = ++generationRef.current;
     startStreaming();
 
     try {
@@ -48,7 +50,7 @@ export function useSSE() {
       }
     } catch (err) {
       if (err.name === 'AbortError') {
-        clearStream();
+        if (generationRef.current === generation) clearStream();
         return;
       }
       clearStream();
